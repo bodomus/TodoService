@@ -1,0 +1,30 @@
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: |
+          dotnet restore TodoService/TodoService.csproj
+          dotnet restore TodoService.Tests/TodoService.Tests.csproj
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test TodoService.Tests/TodoService.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
+
+      # Дальше твоя сборка контейнера
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./TodoService
+          push: false
+          tags: todoservice:ci
+

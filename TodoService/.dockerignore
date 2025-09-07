@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/*.user
+**/*.suo
+**/*.pdb
+**/*.coverage*
+node_modules/
+dist/
+.env
+**/*.sqlite
+**/*.db
