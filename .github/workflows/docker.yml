@@ -1,7 +1,10 @@
 name: CI
+
 on:
-  push: { branches: [ "main", "master" ] }
-  pull_request: { branches: [ "main", "master" ] }
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
 
 jobs:
   build-test-and-image:
@@ -22,26 +25,40 @@ jobs:
           --health-retries=30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
 
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U postgres && break
+            echo "Postgres is not ready yet... ($i)"
+            sleep 2
+          done
+
       - name: Restore
         run: |
           dotnet restore TodoService/TodoService.csproj
           dotnet restore TodoService.Tests/TodoService.Tests.csproj
 
-      # ВАЖНО: дать тестам строку подключения к сервису Postgres
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
       - name: Test
         env:
+          # даём приложению строку подключения для тестов
           ConnectionStrings__Default: Host=localhost;Port=5432;Database=todos;Username=postgres;Password=postgres
-        run: |
-          # при желании можно заранее применить миграции:
-          dotnet ef database update --project TodoService/TodoService.csproj --startup-project TodoService/TodoService.csproj
-          dotnet test TodoService.Tests/TodoService.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
+        run: dotnet test TodoService.Tests/TodoService.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
 
       - name: Upload test results
         if: always()
