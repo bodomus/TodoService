@@ -1,17 +1,28 @@
 name: CI
-
 on:
-  push:
-    branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
+  push: { branches: [ "main", "master" ] }
+  pull_request: { branches: [ "main", "master" ] }
 
 jobs:
   build-test-and-image:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: todos
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -23,13 +34,16 @@ jobs:
           dotnet restore TodoService/TodoService.csproj
           dotnet restore TodoService.Tests/TodoService.Tests.csproj
 
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
+      # ВАЖНО: дать тестам строку подключения к сервису Postgres
       - name: Test
-        run: dotnet test TodoService.Tests/TodoService.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
+        env:
+          ConnectionStrings__Default: Host=localhost;Port=5432;Database=todos;Username=postgres;Password=postgres
+        run: |
+          # при желании можно заранее применить миграции:
+          dotnet ef database update --project TodoService/TodoService.csproj --startup-project TodoService/TodoService.csproj
+          dotnet test TodoService.Tests/TodoService.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test_results.trx"
 
-      - name: Upload test results (artifact)
+      - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
