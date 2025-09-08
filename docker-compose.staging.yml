@@ -1,0 +1,5 @@
+﻿services:
+  todoservice:
+    environment:
+      DOTNET_ENVIRONMENT: Staging
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=todos;Username=postgres;Port=5432;Password=${DB_PASSWORD}

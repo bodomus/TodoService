@@ -15,6 +15,7 @@ services:
   todoservice:
     build: ./TodoService
     environment:
+      DOTNET_ENVIRONMENT: Development
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       POSTGRES_CONN: Host=postgres;Port=5432;Database=todos;Username=postgres;Password=postgres

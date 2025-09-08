@@ -16,10 +16,10 @@ public class TodosTests : IClassFixture<AppFactory>
     {
         var client = _factory.CreateClient();
         var todo = new Todo { Title = "Test", IsCompleted = false };
-        var post = await client.PostAsJsonAsync("/todos", todo);
-        var id = post.Headers.Location.OriginalString.ToString().Split("/");
+        var post = await client.PostAsJsonAsync("v1/todos", todo);
+        var id = post.Headers.Location.OriginalString.Split("/");
         post.StatusCode.Should().Be(HttpStatusCode.Created);
-        var get = await client.GetAsync($"/todos/{int.Parse(id.Last())}");
+        var get = await client.GetAsync($"v1/todos/{int.Parse(id.Last())}");
         get.StatusCode.Should().Be(HttpStatusCode.OK);
         var obj = await get.Content.ReadFromJsonAsync<Todo>();
         obj!.Title.Should().Be("Test");

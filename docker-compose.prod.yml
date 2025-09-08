@@ -1,0 +1,8 @@
+﻿services:
+  todoservice:
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=todos;Port=5432;Username=postgres;Password=${DB_PASSWORD}
+    ports:
+      - "80:8080"
+    restart: always

@@ -1,0 +1,6 @@
+﻿services:
+  todoservice:
+    environment:
+      DOTNET_ENVIRONMENT: Development
+    volumes:
+      - .:/src
