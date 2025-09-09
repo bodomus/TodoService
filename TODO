@@ -1,0 +1,142 @@
+\[model: OpenAI o3] — 09 Sep 2025, 14:14 (Europe/Kyiv)
+
+Круто, двигаемся дальше. Ниже — дорожная карта улучшений и изучения смежных технологий. Сверху — быстрые победы, дальше — средний и прод-уровень.
+
+## Куда идти дальше (приоритеты)
+
+**Быстрые победы (1–2 дня):**
+
+* Observability: Serilog + OpenTelemetry (traces/metrics/logs), Prometheus + Grafana.
+* Health/Readiness/Liveness + `MapHealthChecks` c разбиением по тегам.
+* Версионирование API: стабильная схема, пример депрекейта в Swagger.
+* Rate limiting (`AspNetCore.RateLimiting`), correlation-id и idempotency-keys.
+
+**Средний горизонт (неделя):**
+
+* **Redis**: кэширование (cache-aside), распределённый лок (`RedLock`), pub/sub для инвалидации кэша.
+* **Kafka/Redpanda + MassTransit**: outbox, ретраи/ДЛК-очереди, контрактные события (Avro + Schema Registry).
+* **Testcontainers**: интеграционные тесты с живыми Postgres/Redis/Kafka в CI.
+* **Безопасность**: JWT/OAuth2 (Auth0/IdentityServer), роль/скоуп-гарды, секреты через `dotnet user-secrets`/Vault.
+
+**Прод-уровень:**
+
+* **SAGA/оркестрация**: MassTransit Saga + EF Core Repository, паттерн процессов.
+* **CDC**: Debezium (outbox/интеграции без ручных продюсеров).
+* **Kubernetes**: Helm-чарты, KEDA для воркеров, GitOps (ArgoCD).
+* **Код-качество**: SonarQube, покрытие в CI, SAST/Dependency scan (Trivy/Grype), SBOM (CycloneDX).
+* **Feature flags**: OpenFeature/Unleash.
+* **Контрактные тесты**: Pact (Provider/Consumer).
+
+---
+
+<details>
+<summary>Шаблоны и конкретные шаги</summary>
+
+### 1) Observability (быстро)
+
+* **Serilog** + `Serilog.Enrichers.CorrelationId` + `UseSerilogRequestLogging()`.
+* **OpenTelemetry**: `AddOpenTelemetry().WithTracing().WithMetrics().WithLogging()`; экспортер OTLP → Tempo/Jaeger, Prometheus для метрик.
+* **Grafana/Prometheus docker-compose** для локали.
+  **Критерий:** в Grafana видны latency p95/p99, количество ошибок, в Jaeger — сквозные трассы /todos.
+
+### 2) Health / Readiness / Liveness
+
+* Разные эндпоинты: `/health/live`, `/health/ready`.
+* Теги: БД/Redis как readiness-checks, in-memory — liveness.
+  **Критерий:** k8s/compose перезапускает только когда нужно; readiness учитывает БД/кэш.
+
+### 3) Redis
+
+* **Кэш**: Cache-Aside для `GET /todos` (ETag/If-None-Match опционально).
+* **Locking**: RedLock для критических секций (пример — массовые апдейты).
+* **Pub/Sub**: инвалидация кэша при `POST/PUT/DELETE`.
+  **Критерий:** нагрузочный тест показывает снижение RPS к БД, отсутствие гонок.
+
+`docker-compose.yml` (фрагмент):
+
+```yaml
+redis:
+  image: redis:7
+  ports: ["6379:6379"]
+  command: ["redis-server", "--appendonly", "yes"]
+```
+
+### 4) Kafka / Redpanda + MassTransit
+
+* Для локалки удобен **Redpanda** (drop-in Kafka): простейший single-node.
+* **События**: `todo.created|updated|deleted` (Avro + Schema Registry).
+* **Outbox**: уже есть в проекте — подключить к продюсингу событий после транзакции.
+* **DLQ/повторы**: политика в MassTransit, idempotency по message key.
+  **Критерий:** при создании TODO эмитится событие, потребитель в отдельном воркере обрабатывает с ретраями.
+
+`docker-compose.yml` (фрагмент Redpanda):
+
+```yaml
+redpanda:
+  image: redpandadata/redpanda:v24.2.7
+  command:
+    - redpanda start --overprovisioned --smp 1 --memory 512M --reserve-memory 0M --set redpanda.enable_idempotence=true
+  ports: ["9092:9092", "9644:9644"]
+```
+
+### 5) Testcontainers в тестах
+
+* Поднять Postgres/Redis/Kafka прямо из тестов xUnit.
+* Фикстуры: `IClassFixture<...>` с жизненным циклом контейнера.
+  **Критерий:** `dotnet test` не зависит от локальных сервисов.
+
+### 6) Безопасность
+
+* **JWT**: минимальный issuer/audience, ролевые политики.
+* **Scopes** для продюсеров/консьюмеров (internal service token).
+* **Secrets**: `dotnet user-secrets` локально, в CI — GitHub Environments/Actions secrets.
+
+### 7) Политики устойчивости
+
+* **Polly**: retry/backoff + circuit breaker для БД/Redis/Kafka.
+* **Fallback**: деградация на кэш/временное хранилище.
+  **Критерий:** при сбое Postgres сервис не “умирает”, а корректно сообщает 503/трассирует.
+
+### 8) Контрактные тесты (Pact)
+
+* Сгенерить pact-файлы на стороне клиента, проверять провайдера в CI.
+  **Критерий:** PR с ломающим контрактом падает в CI.
+
+### 9) Feature Flags
+
+* **OpenFeature + Unleash**: опыты (A/B) на уровне API (например, новая валидация `Title`).
+  **Критерий:** можно включить фичу без релиза.
+
+### 10) Kubernetes + GitOps
+
+* **Helm**: чарт для TodoService, values для dev/stage/prod.
+* **KEDA**: автоскейл воркеров по lag в Kafka.
+* **ArgoCD**: Git-истина, PR → автодеплой.
+  **Критерий:** релиз — это merge в repo с чартами, автопромоция между окружениями.
+
+### 11) Качество и безопасность в CI
+
+* **Matrix**: LTS/Current SDK, ОС.
+* **Coverage**: coverlet + отчёты в PR.
+* **Trivy/Grype**: скан базового и финального Docker-образа.
+* **SBOM**: `dotnet build /p:GenerateDocumentationFile=true` + CycloneDX.
+  **Критерий:** PR показывает coverage % и уязвимости.
+
+### 12) API-уровень
+
+* **FluentValidation** + ProblemDetails.
+* **Mapster** для DTO ↔ Entity.
+* **gRPC** (внутрисервисное), **GraphQL (HotChocolate)** — по желанию.
+* **OpenAPI clients**: автоген клиентов для e2e демо.
+
+</details>
+
+---
+
+## Предложение плана на 3 итерации
+
+1. **Итерация 1 (обсервабилити + кэш):** Serilog+OTel+Prometheus/Grafana, health-теги; Redis cache-aside + pub/sub, idempotency-keys и correlation-id, базовый rate limiting.
+2. **Итерация 2 (сообщения + тесты):** Redpanda+MassTransit (outbox, DLQ), Testcontainers для Pg/Redis/Kafka, интеграционные тесты и покрытие.
+3. **Итерация 3 (безопасность + качество):** JWT/Scopes, Polly-политики, Trivy+SBOM, Pact-контракты; по желанию — Helm+KEDA+ArgoCD.
+
+Скажите, с какого блока начнём — предложу конкретные тикеты, acceptance-критерии и куски кода под наш текущий репозиторий.
